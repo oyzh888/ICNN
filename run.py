@@ -6,8 +6,9 @@ depths = [20]
 gpu_id = '0'
 batchsize = 256
 epoch = 150
-exp_dir = './tb_dir/cifar_exp/test_256bs_200epoch_layer2_'
+exp_dir = './tb_dir/cifar_exp/test_256bs_150epoch_layer3_reproduct'
 res = exp_dir + 'res.txt'
+
 
 # Delete the previous file folder
 # os.system('rm -r %s' % exp_dir)

@@ -146,18 +146,6 @@ class ResNet(nn.Module):
         x = self.layer1(x)  # 32x32
         x = self.layer2(x)  # 16x16
 
-        label_filter_range = x.shape[1] / 10
-        if(epoch % 5 == 0 and self.training):
-            labels = labels * label_filter_range
-            label_ones = torch.zeros(x.shape) + 1e-2
-            for idx, la in enumerate(labels):
-                label_ones[idx,la:la+label_filter_range,:,:] = 1
-            label_ones = label_ones.to(x.device)
-            x = x * label_ones
-
-        x = self.layer3(x)  # 8x8
-
-        # labels = torch.clamp(input=labels, max=7)
         # label_filter_range = x.shape[1] / 10
         # if(epoch % 5 == 0 and self.training):
         #     labels = labels * label_filter_range
@@ -166,6 +154,18 @@ class ResNet(nn.Module):
         #         label_ones[idx,la:la+label_filter_range,:,:] = 1
         #     label_ones = label_ones.to(x.device)
         #     x = x * label_ones
+
+        x = self.layer3(x)  # 8x8
+
+        # labels = torch.clamp(input=labels, max=7)
+        label_filter_range = x.shape[1] / 10
+        if(epoch % 3 == 0 and self.training):
+            labels = labels * label_filter_range
+            label_ones = torch.zeros(x.shape) + 1e-2
+            for idx, la in enumerate(labels):
+                label_ones[idx,la:la+label_filter_range,:,:] = 1
+            label_ones = label_ones.to(x.device)
+            x = x * label_ones
         # import ipdb;
         # ipdb.set_trace()
         # print(x.shape)
