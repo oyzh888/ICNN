@@ -10,10 +10,8 @@ https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py
 import torch.nn as nn
 import math
 import torch
-import numpy as np
 
 __all__ = ['resnet']
-
 
 def conv3x3(in_planes, out_planes, stride=1):
     "3x3 convolution with padding"
@@ -100,7 +98,7 @@ class ResNet(nn.Module):
         assert (depth - 2) % 6 == 0, 'depth should be 6n+2'
         n = (depth - 2) // 6
 
-        block = Bottleneck if depth >= 44 else BasicBlock
+        block = Bottleneck if depth >=44 else BasicBlock
 
         self.inplanes = 16
 
@@ -113,6 +111,7 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 64, n, stride=2)
         self.avgpool = nn.AvgPool2d(8)
         self.fc = nn.Linear(64 * block.expansion, num_classes)
+
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -142,34 +141,41 @@ class ResNet(nn.Module):
     def forward(self, x, labels, epoch):
         x = self.conv1(x)
         x = self.bn1(x)
-        x = self.relu(x)  # 32x32
+        x = self.relu(x)    # 32x32
 
         x = self.layer1(x)  # 32x32
         x = self.layer2(x)  # 16x16
-
         x = self.layer3(x)  # 8x8
-        # 强制mask掉class1 的filters
-        label_filter_range = int(x.shape[1] / 10)
+
+        # labels = torch.clamp(input=labels, max=7)
+        label_filter_range = x.shape[1] / 10
+
         labels = labels * label_filter_range
-        label_ones = torch.zeros(x.shape, device=x.device) + 1.0
+        label_ones = torch.zeros(x.shape, device=x.device) + 1e-2
+        for idx, la in enumerate(labels):
+            label_ones[idx,la:la+label_filter_range,:,:] = 1
 
-        # label_ones[:, 0 * label_filter_range:1 * label_filter_range, :, :] = 0
-        # label_ones[:10*label_filter_range:,:,:] = 0
 
-        # random filters drop
-        # random_filter_indices = torch.from_numpy(np.random.randint(low=0, high=x.shape[1], size=label_filter_range))
-        # label_ones[:, random_filter_indices, :, :] = 0
+        # selected_loss_mask = 1 - label_ones
+        icnn_loss = 0
+        if (epoch % 3 == 0 & epoch > 20):
+            # icnn_loss = 1.0 * torch.sum(torch.abs((1 - label_ones) * x))
+            icnn_loss = 1.0 * torch.sum(torch.sqrt(torch.pow((1 - label_ones) * x, 2)))
+            # x = x * label_ones
 
-        label_ones = label_ones.to(x.device)
-        x = x * label_ones
+        # import ipdb;
+        # ipdb.set_trace()
+        # print(x.shape)
 
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
 
+
+
+
         x = self.fc(x)
 
-        return x
-
+        return x, icnn_loss
 
 def resnet(**kwargs):
     """
