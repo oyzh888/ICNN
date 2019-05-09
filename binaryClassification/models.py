@@ -103,7 +103,7 @@ class ResNet(nn.Module):
 
         self.inplanes = 16
 
-        self.conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1,
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1,
                                bias=False)
         self.bn1 = nn.BatchNorm2d(16)
         self.relu = nn.ReLU(inplace=True)
@@ -114,7 +114,9 @@ class ResNet(nn.Module):
 
         self.fc = []
         for i in range(num_classes):
-            self.fc.append(nn.Linear(64 * block.expansion, 1))
+            temp_fc = nn.Linear(64 * block.expansion, 1)
+            self.fc.append(temp_fc)
+            self.add_module('fc%d' % (i), temp_fc)
 
         self.num_classes = num_classes
 
@@ -159,7 +161,7 @@ class ResNet(nn.Module):
         res = []
         # print(x.type())
         for i in range(self.num_classes):
-            fc = self.fc[i].to('cuda')
+            fc = self.fc[i].to(x.device)
             res.append(fc(x))
 
         # x = self.fc(x)
