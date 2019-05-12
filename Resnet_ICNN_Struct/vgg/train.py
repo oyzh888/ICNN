@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-from models import ResNet as resnet_cifar
+from models import VGG as model_cifar
 import pandas as pd
 import argparse
 import csv
@@ -147,7 +147,7 @@ if __name__ == '__main__':
     if args.dataset == 'cifar-100':
         num_classes = 100
 
-    model = resnet_cifar(depth=args.depth, num_classes=num_classes)
+    model = model_cifar("VGG16")
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1,
                                 momentum=0.9, nesterov=True, weight_decay=1e-4)
 
