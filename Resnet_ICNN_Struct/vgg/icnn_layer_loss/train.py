@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-from models import ResNet as resnet_cifar
+from models import VGG as model_cifar
 import pandas as pd
 import argparse
 import csv
@@ -29,7 +29,7 @@ parser.add_argument('--res', default='./result.txt', help="file to write best re
 args = parser.parse_args()
 
 if os.path.exists(args.exp_dir):
-    print ('Already exist')
+    print ('Already exist and will continue training')
     # exit()
 summary = TensorboardSummary(args.exp_dir)
 tb_writer = summary.create_summary()
@@ -40,8 +40,18 @@ def train_model(model,criterion,optimizer,scheduler,num_epochs=25):
     #best_model = model.state_dic()
     best_acc = 0.0
     best_train_acc = 0.0
+    # Load unfinished model
+    unfinished_model_path = os.path.join(args.exp_dir , 'unfinished_model.pt')
+    if(os.path.exists(unfinished_model_path)):
+        checkpoint = torch.load(unfinished_model_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        epoch = checkpoint['epoch']
+        loss = checkpoint['loss']
+    else: epoch = 0
 
-    for epoch in range(num_epochs):
+    while epoch < num_epochs:
+        epoch_time = time.time()
         print('-'*10)
         print('Epoch {}/{}'.format(epoch,num_epochs-1))
 
@@ -68,66 +78,12 @@ def train_model(model,criterion,optimizer,scheduler,num_epochs=25):
                     labels = Variable(labels.cuda())
                 else:
                     inputs, labels = Variable(inputs), Variable(labels)
-
                 #zero the parameter gradients
                 optimizer.zero_grad()
 
                 #forward
-                outputs = model(inputs)
-                # loss = criterion(outputs, labels)
-                # print(loss)
-
-                # import ipdb; ipdb.set_trace()
-                def softmax(x):
-                    return x.exp() / (x.exp().sum(-1)).unsqueeze(-1)
-                def nl(input, target):
-                    return -input[range(target.shape[0]), target].log().mean()
-                def nl_js(input, target):
-                    losses = -input[range(target.shape[0]), target].log()
-
-                    # print(losses.shape)
-                    # import ipdb; ipdb.set_trace()
-
-                    group = 8
-                    num_of_items_group = int(losses.shape[0] / group)
-
-                    global_average_f = losses.mean()
-                    group_mean = []
-                    group_var = []
-                    for i in range(group):
-                        group_mean.append(losses[i * num_of_items_group:(i + 1) * num_of_items_group].mean())
-                        group_var.append(losses[i * num_of_items_group:(i + 1) * num_of_items_group].var())
-
-                    gama = 0
-                    for i in range(0,group):
-                        gama += 1 / ( num_of_items_group / torch.pow(group_var[i], 2)  * torch.pow(group_mean[i] - global_average_f, 2 ) )
-                        print(( num_of_items_group / torch.pow(group_var[i], 2)  * torch.pow(group_mean[i] - global_average_f, 2 ) ))
-                    gama = (group - 3 ) * gama
-                    # import ipdb; ipdb.set_trace()
-                    if(gama > group):
-                        gama = group
-                    print('gama',gama)
-
-                    js_loss = 0
-                    for i in range(group):
-                        js_loss += global_average_f + (1 - gama) * (group_mean[i] - global_average_f)
-
-                    print('js_loss',js_loss)
-                    print('*****'*10)
-
-                    return js_loss
-
-                pred = softmax(outputs)
-                # loss = nl(pred, labels)
-                loss = nl_js(pred, labels)
-
-
-                # loss
-                # print(loss2)
-                # print(loss2.shape)
-                # loss =
-
-
+                outputs, icnn_outputs = model(inputs, labels, epoch)
+                loss = 0.7 * criterion(outputs, labels) + 0.3 * criterion(icnn_outputs, labels)
                 _, preds = torch.max(outputs.data, 1)
                 # _,top5_preds = torch.topk(outputs.data,k=5,dim=1)
                 # print ('group loss:',group_loss[0])
@@ -160,6 +116,17 @@ def train_model(model,criterion,optimizer,scheduler,num_epochs=25):
             if phase == 'val' and epoch_acc > best_acc:
                 best_acc = epoch_acc
                 best_model = model.state_dict()
+            cost_time = time.time() - epoch_time
+            print('Epoch time cost {:.0f}m {:.0f}s'.format(cost_time // 60, cost_time % 60))
+        # Save model periotically
+        if(epoch % 2 == 0):
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': loss,
+            }, os.path.join(args.exp_dir , 'unfinished_model.pt'))
+        epoch += 1
 
     cost_time = time.time() - since
     print ('Training complete in {:.0f}m {:.0f}s'.format(cost_time//60,cost_time%60))
@@ -167,6 +134,7 @@ def train_model(model,criterion,optimizer,scheduler,num_epochs=25):
     print ('Best Val Acc is {:.4f}'.format(best_acc))
     model.load_state_dict(best_model)
     return model,cost_time,best_acc,best_train_acc
+
 
 if __name__ == '__main__':
     print ('DataSets: '+args.dataset)
@@ -179,7 +147,7 @@ if __name__ == '__main__':
     if args.dataset == 'cifar-100':
         num_classes = 100
 
-    model = resnet_cifar(depth=args.depth, num_classes=num_classes)
+    model = model_cifar("VGG16")
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1,
                                 momentum=0.9, nesterov=True, weight_decay=1e-4)
 
@@ -204,6 +172,9 @@ if __name__ == '__main__':
 
     exp_name = 'resnet%d dataset: %s batchsize: %d epoch: %d bestValAcc: %.4f bestTrainAcc: %.4f \n' % (
     args.depth, args.dataset,args.batch_size, args.epoch,best_acc,best_train_acc)
+
+    os.system('rm ' + os.path.join(args.exp_dir , 'unfinished_model.pt') )
+    torch.save(model.state_dict(), os.path.join(args.exp_dir , 'saved_model.pt'))
     with open(args.res,'a') as f:
         f.write(exp_name)
         f.close()
