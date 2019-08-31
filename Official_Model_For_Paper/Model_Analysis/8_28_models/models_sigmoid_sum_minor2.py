@@ -100,18 +100,32 @@ class LearnableMaskLayer(nn.Module):
 
     def get_channel_mask(self):
         c_mask = self.mask
-        delta_scale = 10
+        delta_scale = 1
         c_mask = torch.sigmoid(c_mask/delta_scale)
         return c_mask
 
+    # When test the model, how to use mask:
     def _icnn_mask(self, x, labels, epoch):
-        if (epoch % 3 == 1 and self.training):
-            index_mask = torch.zeros(x.shape, device=x.device)
-            for idx, la in enumerate(labels):
-                index_mask[idx, :, :, :] = self.mask[:, la].view(-1, self.mask.shape[0], 1, 1)
-            return index_mask * x
-        else:
-            return x
+
+        # import ipdb
+        # mask some channels
+        mask_zeros = torch.zeros(self.mask[:, 0].shape, device=x.device)
+        # mask_zeros += self.mask[:, 5] # mask first class channels
+        # mask_zeros += self.mask[:, 1]  # mask first class channels
+        mask_zeros += torch.sum(self.mask[:], dim=-1)
+        mask_zeros -= self.mask[:, 0]  # mask first class channels
+        mask_zeros -= self.mask[:, 5]  # mask first class channels
+        return x * mask_zeros.view(-1, 64, 1, 1)
+
+        # if (epoch % 3 == 1 and self.training):
+        #     index_mask = torch.zeros(x.shape, device=x.device)
+        #     for idx, la in enumerate(labels):
+        #         index_mask[idx, :, :, :] = self.mask[:, la].view(-1, self.mask.shape[0], 1, 1)
+        #     return index_mask * x
+        # else:
+        #     return x
+
+
 
     def loss_function(self):
         # L1 regulization
@@ -121,7 +135,7 @@ class LearnableMaskLayer(nn.Module):
         # L1 reg
         lambda1 = 1e-4
         l1_reg= lambda1 * torch.norm(lMask, 1)
-
+        # import ipdb; ipdb.set_trace()
 
         # L_max reg
         # after torch.max(), class_max[0]->elements; class_max[1] -> indices
@@ -132,29 +146,15 @@ class LearnableMaskLayer(nn.Module):
         # L_21 reg
         l_21_reg = torch.norm(torch.norm(lMask, 1, dim=1), 2) * 1e-3
 
-        # import ipdb;
-        # ipdb.set_trace()
-
-        # print('l_max_reg , l1_reg , l_21_reg', l_max_reg , l1_reg , l_21_reg)
-        # print('lmask , self.mask')
-        # print(lMask[:1])
-        # print(self.mask[:1])
-
-        activate_max_num_reg = torch.norm(lMask, 1, dim=1) - (lMask.shape[1]*0.3)
-        activate_max_num_reg = torch.relu(activate_max_num_reg)
-        activate_max_num_reg = torch.sum(activate_max_num_reg)* lambda1
-
-        return l_max_reg + activate_max_num_reg
+        # print(l_max_reg , l1_reg , l_21_reg)
+        return l_21_reg
         return l_max_reg + l1_reg + l_21_reg
 
     def clip_lmask(self):
         lmask = self.mask
         lmask_max = torch.max(lmask, dim=1)[0].view(-1, 1)
         lmask_min = torch.min(lmask, dim=1)[0].view(-1, 1)
-        # import ipdb;
-        # ipdb.set_trace()
-        # if lmask_max - lmask_min > 1e-5:
-        lmask = 2 * (lmask-lmask_min) / (lmask_max - lmask_min + 1e-7) - 1
+        lmask = 2 * (lmask-lmask_min) / (lmask_max - lmask_min) - 1
         # print(lmask)
         self.mask.data = lmask
 
